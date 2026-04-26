@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 
 
 st.set_page_config(page_title="Global Hunger Index", layout="wide")
@@ -203,3 +205,95 @@ for col, (label, value, sub) in zip([c1,c2,c3,c4], cards):
             <div class="value">{value}</div>
             <div class="sub">{sub}</div>
         </div>""", unsafe_allow_html=True)
+
+
+HUNGER_SCALE = [
+    [0.00, "#fff5f0"],
+    [0.25, "#fdc89e"],
+    [0.50, "#f99350"],
+    [0.75, "#e85d26"],
+    [1.00, "#9b3b16"],
+]
+
+
+st.markdown('<div class="sec">Geographic Distribution</div>', unsafe_allow_html=True)
+
+map_df = filtered_df[["Country", "ISO3", metric_col]].dropna(subset=[metric_col])
+
+if map_df.empty:
+    st.info("No data available for the current selection.")
+else:
+    fig_map = px.choropleth(
+        map_df,
+        locations="ISO3",
+        color=metric_col,
+        hover_name="Country",
+        color_continuous_scale=HUNGER_SCALE,
+        labels={metric_col: metric},
+    )
+    fig_map.update_layout(
+        **{**CHART_BASE, "margin": dict(l=10, r=10, t=50, b=10)},
+        height=460,
+        geo=dict(
+            bgcolor="#ffffff",
+            showframe=False,
+            showcoastlines=True,
+            coastlinecolor="#e4e7ec",
+            landcolor="#f7f8fc",
+            projection_type="natural earth",
+        ),
+        coloraxis_colorbar=dict(
+            title=dict(text=metric, font=dict(size=11, color="#9aa5b4")),
+            thickness=12,
+            len=0.7,
+            tickfont=dict(size=10, color="#1a1f36"),
+            outlinewidth=0,
+        ),
+        title=dict(
+            text=f"{metric} — {year}",
+            font=dict(size=14, color="#1a1f36", weight=600),
+            x=0.01, y=0.98, xanchor="left",
+        ),
+    )
+    st.plotly_chart(fig_map, use_container_width=True)
+
+
+st.markdown(f'<div class="sec">Top {top_n} Countries — {metric} ({year})</div>', unsafe_allow_html=True)
+
+bar_df = (
+    filtered_df[["Country", "Region", metric_col]]
+    .dropna(subset=[metric_col])
+    .sort_values(metric_col, ascending=False)
+    .head(top_n)
+    .iloc[::-1]
+)
+
+if bar_df.empty:
+    st.info("No data available for the current selection.")
+else:
+    fig_bar = go.Figure(go.Bar(
+        x=bar_df[metric_col],
+        y=bar_df["Country"],
+        orientation="h",
+        marker=dict(color=COLORS[0], line=dict(width=0)),
+        text=bar_df[metric_col].round(1),
+        textposition="outside",
+        textfont=dict(size=10, color="#1a1f36"),
+        hovertemplate="<b>%{y}</b><br>" + metric + ": %{x:.1f}<extra></extra>",
+    ))
+    fig_bar.update_layout(
+        **{**CHART_BASE, "margin": dict(l=10, r=40, t=20, b=30)},
+        height=max(360, 22 * len(bar_df) + 80),
+        xaxis=dict(
+            title=dict(text=metric, font=dict(size=11, color="#9aa5b4")),
+            gridcolor="#eef0f4", zerolinecolor="#e4e7ec",
+            tickfont=dict(size=10, color="#1a1f36"),
+        ),
+        yaxis=dict(
+            title=None,
+            tickfont=dict(size=11, color="#1a1f36"),
+            automargin=True,
+        ),
+        showlegend=False,
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
