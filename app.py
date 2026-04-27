@@ -255,7 +255,7 @@ else:
             x=0.01, y=0.98, xanchor="left",
         ),
     )
-    st.plotly_chart(fig_map, use_container_width=True)
+    st.plotly_chart(fig_map, width="stretch")
 
 
 st.markdown(f'<div class="sec">Top {top_n} Countries — {metric} ({year})</div>', unsafe_allow_html=True)
@@ -296,4 +296,168 @@ else:
         ),
         showlegend=False,
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width="stretch")
+
+
+SEVERITY_ORDER  = ["Low", "Moderate", "Serious", "Alarming", "Extremely Alarming", "No Data"]
+SEVERITY_COLORS = {
+    "Low":               "#10b981",
+    "Moderate":          "#84cc16",
+    "Serious":           "#f59e0b",
+    "Alarming":          "#e85d26",
+    "Extremely Alarming":"#9b3b16",
+    "No Data":           "#cbd5e1",
+}
+
+
+col_trend, col_sev = st.columns([3, 2])
+
+with col_trend:
+    st.markdown(f'<div class="sec">Trend Over Time — {metric}</div>', unsafe_allow_html=True)
+    trend_n = min(top_n, 8)
+    trend_countries = (
+        filtered_df[["Country", metric_col]]
+        .dropna(subset=[metric_col])
+        .nlargest(trend_n, metric_col)["Country"]
+        .tolist()
+    )
+    metric_year_cols = [METRIC_MAP[metric][y] for y in GHI_YEARS]
+    period_to_year   = {METRIC_MAP[metric][y]: y for y in GHI_YEARS}
+    trend_long = (
+        filtered_df[filtered_df["Country"].isin(trend_countries)][["Country"] + metric_year_cols]
+        .melt(id_vars="Country", value_vars=metric_year_cols, var_name="period_col", value_name="value")
+    )
+    trend_long["Year"] = trend_long["period_col"].map(period_to_year)
+    trend_long = trend_long.dropna(subset=["value"])
+
+    if trend_long.empty:
+        st.info("No trend data available.")
+    else:
+        fig_trend = px.line(
+            trend_long, x="Year", y="value", color="Country",
+            markers=True, color_discrete_sequence=COLORS,
+        )
+        fig_trend.update_traces(line=dict(width=2.5), marker=dict(size=7))
+        fig_trend.update_layout(
+            **{**CHART_BASE, "margin": dict(l=10, r=10, t=20, b=30)},
+            height=380,
+            xaxis=dict(
+                tickmode="array", tickvals=GHI_YEARS,
+                gridcolor="#eef0f4", zerolinecolor="#e4e7ec",
+                tickfont=dict(size=10, color="#1a1f36"),
+            ),
+            yaxis=dict(
+                title=dict(text=metric, font=dict(size=11, color="#9aa5b4")),
+                gridcolor="#eef0f4", zerolinecolor="#e4e7ec",
+                tickfont=dict(size=10, color="#1a1f36"),
+            ),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=-0.28, xanchor="center", x=0.5,
+                font=dict(size=10, color="#1a1f36"), bgcolor="rgba(0,0,0,0)",
+            ),
+        )
+        st.plotly_chart(fig_trend, width="stretch")
+
+with col_sev:
+    st.markdown(f'<div class="sec">Severity Distribution — {year}</div>', unsafe_allow_html=True)
+    sev_counts = (
+        filtered_df[f"ghi_{year}"].apply(severity)
+        .value_counts()
+        .reindex(SEVERITY_ORDER, fill_value=0)
+    )
+    fig_sev = go.Figure(go.Bar(
+        x=sev_counts.values,
+        y=sev_counts.index,
+        orientation="h",
+        marker=dict(color=[SEVERITY_COLORS[k] for k in sev_counts.index]),
+        text=sev_counts.values,
+        textposition="outside",
+        textfont=dict(size=10, color="#1a1f36"),
+        hovertemplate="<b>%{y}</b><br>Countries: %{x}<extra></extra>",
+    ))
+    fig_sev.update_layout(
+        **{**CHART_BASE, "margin": dict(l=10, r=30, t=20, b=30)},
+        height=380,
+        xaxis=dict(
+            title=dict(text="Countries", font=dict(size=11, color="#9aa5b4")),
+            gridcolor="#eef0f4", zerolinecolor="#e4e7ec",
+            tickfont=dict(size=10, color="#1a1f36"),
+        ),
+        yaxis=dict(
+            title=None, autorange="reversed",
+            tickfont=dict(size=11, color="#1a1f36"), automargin=True,
+        ),
+        showlegend=False,
+    )
+    st.plotly_chart(fig_sev, width="stretch")
+
+
+col_sc, col_reg = st.columns(2)
+
+with col_sc:
+    st.markdown(f'<div class="sec">GHI vs Undernourishment — {year}</div>', unsafe_allow_html=True)
+    ghi_col = f"ghi_{year}"
+    pou_col = METRIC_MAP["Undernourishment (%)"][year]
+    scatter_df = filtered_df[["Country", "Region", ghi_col, pou_col]].dropna()
+    if scatter_df.empty:
+        st.info("No data for scatter at this selection.")
+    else:
+        fig_sc = px.scatter(
+            scatter_df, x=pou_col, y=ghi_col, color="Region",
+            hover_name="Country", color_discrete_sequence=COLORS,
+        )
+        fig_sc.update_traces(marker=dict(size=9, line=dict(width=1, color="#ffffff")))
+        fig_sc.update_layout(
+            **{**CHART_BASE, "margin": dict(l=10, r=10, t=20, b=30)},
+            height=400,
+            xaxis=dict(
+                title=dict(text="Undernourishment (%)", font=dict(size=11, color="#9aa5b4")),
+                gridcolor="#eef0f4", zerolinecolor="#e4e7ec",
+                tickfont=dict(size=10, color="#1a1f36"),
+            ),
+            yaxis=dict(
+                title=dict(text="GHI Score", font=dict(size=11, color="#9aa5b4")),
+                gridcolor="#eef0f4", zerolinecolor="#e4e7ec",
+                tickfont=dict(size=10, color="#1a1f36"),
+            ),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=-0.32, xanchor="center", x=0.5,
+                font=dict(size=10, color="#1a1f36"), bgcolor="rgba(0,0,0,0)",
+            ),
+        )
+        st.plotly_chart(fig_sc, width="stretch")
+
+with col_reg:
+    st.markdown(f'<div class="sec">Regional Average — {metric} ({year})</div>', unsafe_allow_html=True)
+    reg_avg = (
+        filtered_df.groupby("Region")[metric_col]
+        .mean().dropna().sort_values()
+    )
+    if reg_avg.empty:
+        st.info("No regional data for this selection.")
+    else:
+        fig_reg = go.Figure(go.Bar(
+            x=reg_avg.values,
+            y=reg_avg.index,
+            orientation="h",
+            marker=dict(color=COLORS[1], line=dict(width=0)),
+            text=[f"{v:.1f}" for v in reg_avg.values],
+            textposition="outside",
+            textfont=dict(size=10, color="#1a1f36"),
+            hovertemplate="<b>%{y}</b><br>" + metric + ": %{x:.1f}<extra></extra>",
+        ))
+        fig_reg.update_layout(
+            **{**CHART_BASE, "margin": dict(l=10, r=40, t=20, b=30)},
+            height=400,
+            xaxis=dict(
+                title=dict(text=metric, font=dict(size=11, color="#9aa5b4")),
+                gridcolor="#eef0f4", zerolinecolor="#e4e7ec",
+                tickfont=dict(size=10, color="#1a1f36"),
+            ),
+            yaxis=dict(
+                title=None,
+                tickfont=dict(size=11, color="#1a1f36"), automargin=True,
+            ),
+            showlegend=False,
+        )
+        st.plotly_chart(fig_reg, width="stretch")
