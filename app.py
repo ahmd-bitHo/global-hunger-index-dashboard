@@ -78,6 +78,44 @@ section[data-testid="stSidebar"] {
     border-bottom: 2px solid #e85d26;
     display: inline-block;
 }
+
+.insight {
+    background: #ffffff;
+    padding: 16px 18px;
+    height: 100%;
+}
+.insight .label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #9aa5b4;
+    margin-bottom: 8px;
+}
+.insight .name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a1f36;
+    line-height: 1.2;
+    margin-bottom: 6px;
+}
+.insight .desc {
+    font-size: 12px;
+    color: #5b6678;
+    line-height: 1.45;
+}
+
+.footer {
+    background: #ffffff;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-top: 28px;
+    font-size: 12px;
+    color: #5b6678;
+    line-height: 1.6;
+}
+.footer strong { color: #1a1f36; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -461,3 +499,128 @@ with col_reg:
             showlegend=False,
         )
         st.plotly_chart(fig_reg, width="stretch")
+
+
+st.markdown('<div class="sec">Key Insights</div>', unsafe_allow_html=True)
+
+ins = filtered_df.copy()
+ins["delta_2000_2025"] = ins["ghi_2000"] - ins["ghi_2025"]
+ins_valid = ins.dropna(subset=["delta_2000_2025"])
+
+if not ins_valid.empty:
+    improved = ins_valid.nlargest(1, "delta_2000_2025").iloc[0]
+    worsened = ins_valid.nsmallest(1, "delta_2000_2025").iloc[0]
+else:
+    improved = worsened = None
+
+reg_avg_2025 = ins.groupby("Region")["ghi_2025"].mean().dropna()
+hardest_reg, hardest_val = (reg_avg_2025.idxmax(), reg_avg_2025.max()) if not reg_avg_2025.empty else (None, None)
+
+alarm_df    = ins[ins["ghi_2025"] >= 30]
+alarm_count = alarm_df.shape[0]
+alarm_lead  = alarm_df.nlargest(1, "ghi_2025")["Country"].iloc[0] if alarm_count else "—"
+
+i1, i2, i3, i4 = st.columns(4)
+
+with i1:
+    if improved is not None:
+        st.markdown(f"""
+        <div class="insight imp">
+            <div class="label">Most Improved</div>
+            <div class="name">{improved['Country']}</div>
+            <div class="desc">GHI fell <strong>{improved['delta_2000_2025']:.1f} points</strong>
+            from {improved['ghi_2000']:.1f} in 2000 to {improved['ghi_2025']:.1f} in 2025.</div>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="insight imp"><div class="label">Most Improved</div><div class="desc">No data.</div></div>', unsafe_allow_html=True)
+
+with i2:
+    if worsened is not None and worsened["delta_2000_2025"] < 0:
+        st.markdown(f"""
+        <div class="insight wor">
+            <div class="label">Largest Setback</div>
+            <div class="name">{worsened['Country']}</div>
+            <div class="desc">GHI rose <strong>{abs(worsened['delta_2000_2025']):.1f} points</strong>
+            from {worsened['ghi_2000']:.1f} in 2000 to {worsened['ghi_2025']:.1f} in 2025.</div>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="insight wor"><div class="label">Largest Setback</div><div class="desc">No country in this selection has worsened since 2000.</div></div>', unsafe_allow_html=True)
+
+with i3:
+    if hardest_reg is not None:
+        n_reg = ins[ins["Region"] == hardest_reg]["ghi_2025"].notna().sum()
+        st.markdown(f"""
+        <div class="insight reg">
+            <div class="label">Hardest-Hit Region</div>
+            <div class="name">{hardest_reg}</div>
+            <div class="desc">Average GHI of <strong>{hardest_val:.1f}</strong> in 2025
+            across {n_reg} countries — the highest of any region in view.</div>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="insight reg"><div class="label">Hardest-Hit Region</div><div class="desc">No regional data.</div></div>', unsafe_allow_html=True)
+
+with i4:
+    st.markdown(f"""
+    <div class="insight alm">
+        <div class="label">Alarming Countries</div>
+        <div class="name">{alarm_count}</div>
+        <div class="desc"><strong>{alarm_lead}</strong> leads the group of countries
+        with a 2025 GHI score of 30 or above.</div>
+    </div>""", unsafe_allow_html=True)
+
+
+st.markdown('<div class="sec">Data Explorer</div>', unsafe_allow_html=True)
+
+search = st.text_input("Search by country name", placeholder="Type to filter, e.g. India, Yemen…", label_visibility="collapsed")
+
+explorer_cols = ["Country", "Region", "ghi_2000", "ghi_2008", "ghi_2016", "ghi_2025", "Severity_2025"]
+explorer = filtered_df[explorer_cols].copy()
+if search.strip():
+    explorer = explorer[explorer["Country"].str.contains(search.strip(), case=False, na=False)]
+explorer = explorer.sort_values("ghi_2025", ascending=False, na_position="last")
+
+st.dataframe(
+    explorer,
+    width="stretch",
+    hide_index=True,
+    height=360,
+    column_config={
+        "Country":        st.column_config.TextColumn("Country", width="medium"),
+        "Region":         st.column_config.TextColumn("Region",  width="medium"),
+        "ghi_2000":       st.column_config.NumberColumn("GHI 2000", format="%.1f"),
+        "ghi_2008":       st.column_config.NumberColumn("GHI 2008", format="%.1f"),
+        "ghi_2016":       st.column_config.NumberColumn("GHI 2016", format="%.1f"),
+        "ghi_2025":       st.column_config.NumberColumn("GHI 2025", format="%.1f"),
+        "Severity_2025":  st.column_config.TextColumn("Severity 2025"),
+    },
+)
+
+st.download_button(
+    label="Download filtered data (CSV)",
+    data=explorer.to_csv(index=False).encode("utf-8"),
+    file_name="ghi_filtered.csv",
+    mime="text/csv",
+)
+
+
+with st.expander("About the Global Hunger Index"):
+    st.markdown("""
+    The **Global Hunger Index (GHI)** is a tool designed to comprehensively measure
+    and track hunger at global, regional, and national levels. It is calculated each year
+    by Welthungerhilfe and Concern Worldwide and combines four indicators:
+
+    - **Undernourishment** — share of the population with insufficient caloric intake.
+    - **Child Wasting** — share of children under five who are too thin for their height.
+    - **Child Stunting** — share of children under five who are too short for their age.
+    - **Child Mortality** — mortality rate of children under five.
+
+    Scores are interpreted on the following severity scale:
+
+    | Range          | Severity              |
+    |----------------|-----------------------|
+    | < 10           | Low                   |
+    | 10 – 19.9      | Moderate              |
+    | 20 – 29.9      | Serious               |
+    | 30 – 49.9      | Alarming              |
+    | ≥ 50           | Extremely Alarming    |
+    """)
